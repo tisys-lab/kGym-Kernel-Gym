@@ -42,22 +42,22 @@ services:
     restart: unless-stopped
     ports:
       - 3000:3000
-  kvmmanager:
-    image: "us-central1-docker.pkg.dev/llms-for-program-repa-3940/kbdr/kbdr-kvmmanager:${SERVICE_TAG}"
-    build:
-      context: ./
-      dockerfile: docker/kbdr-kvmmanager.Dockerfile
-    deploy:
-      mode: replicated
-      replicas: 10
-    restart: unless-stopped
-    env_file:
-      - path: ./assets/kvmmanager.env
-        required: true
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-credential.json
-    volumes:
-      - ./assets/kvmmanager-credential.json:/root/gcp-credential.json
+  # kvmmanager:
+  #   image: "us-central1-docker.pkg.dev/llms-for-program-repa-3940/kbdr/kbdr-kvmmanager:${SERVICE_TAG}"
+  #   build:
+  #     context: ./
+  #     dockerfile: docker/kbdr-kvmmanager.Dockerfile
+  #   deploy:
+  #     mode: replicated
+  #     replicas: 10
+  #   restart: unless-stopped
+  #   env_file:
+  #     - path: ./assets/kvmmanager.env
+  #       required: true
+  #   environment:
+  #     - GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-credential.json
+  #   volumes:
+  #     - ./assets/kvmmanager-credential.json:/root/gcp-credential.json
   kbuilder:
     image: "us-central1-docker.pkg.dev/llms-for-program-repa-3940/kbdr/kbdr-kbuilder:${SERVICE_TAG}"
     build:
@@ -78,3 +78,6 @@ services:
       - ./assets/kbuilder-repo:/mnt/repo
       - ./assets/linux-backport-commits.json:/root/pick-commits.json
     privileged: true
+    depends_on:
+      kmq:
+        condition: service_healthy

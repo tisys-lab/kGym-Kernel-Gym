@@ -1,8 +1,8 @@
 # Make syz-build;
-FROM golang:1.23.1-bookworm as syzbuild
+FROM golang:1.24.6-bookworm AS syzbuild
 WORKDIR /
 RUN apt update && apt install git -y
-RUN git clone https://github.com/kaloronahuang/syzkaller.git
+RUN git clone https://github.com/tisys-lab/syzkaller.git
 WORKDIR /syzkaller
 RUN make syz-build
 
@@ -13,7 +13,8 @@ RUN mkdir /KBDr
 COPY --from=syzbuild /syzkaller/bin/syz-build /usr/local/bin/syz-build
 
 # Install pip;
-RUN apt install python3-pip python3-venv tar gzip -y -q
+
+RUN apt update && apt install python3-pip python3-venv tar gzip -y -q
 RUN python3 -m venv venv
 
 # Install kworker & kbuilder;

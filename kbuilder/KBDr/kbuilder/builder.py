@@ -1,5 +1,6 @@
 # builder.py
 import asyncio.subprocess as asp
+from pydoc import importfile
 import aiofiles
 from KBDr.kworker import JobProcessorContext, run_async
 import os, json, shutil
@@ -8,6 +9,7 @@ from google.cloud.storage import Client, transfer_manager, Blob
 from .bug_metadata import generate_bug_metedata
 from .repo import get_local_repo, get_userspace_image
 from .backport import apply_fix_backports
+import logging
 
 kbuilder_argument_schema = {
     "type": "object",
@@ -142,6 +144,8 @@ async def on_cancellation(jpctx: JobProcessorContext):
 async def consume_kbuilder(
     jpctx: JobProcessorContext,
     job_ctx: dict):
+
+    logging.warning('Enter builder')
     jpctx.register_cleanup_handler(on_cancellation)
     task_result = {
         'result': 'failure',
@@ -153,6 +157,7 @@ async def consume_kbuilder(
     # GCP client;
     storage_client = Client()
     bucket_name = os.environ['GCS_BUCKET_NAME']
+    logging.warning('Bucket name')
     bucket = storage_client.bucket(bucket_name)
     job_storage_prefix = f'jobs/{job_ctx["job-id"]}/{job_ctx["current-worker"]}_kbuilder/'
     job_storage_url_prefix = f'https://storage.cloud.google.com/{bucket_name}/{job_storage_prefix}'
@@ -162,7 +167,10 @@ async def consume_kbuilder(
     await run_async(os.makedirs, work_dir)
     clone_dir = os.path.join(work_dir, 'linux')
     await run_async(os.makedirs, clone_dir)
+    logging.warning('Get image')
     userspace_img, ssh_key = await get_userspace_image(argument['userspace-image-name'])
+
+    logging.warning('Clone')
     # clone repo;
     await jpctx.worker.report_job_log_async(job_ctx['job-id'], 'Getting the kernel checkout')
     status, message = await prepare_clone(
@@ -180,8 +188,12 @@ async def consume_kbuilder(
             'Successfully obtained the kernel checkout')
     # save the config;
     async with aiofiles.open(os.path.join(work_dir, 'config'), 'w', encoding='utf-8') as fp:
+
         await fp.write(argument['kernel-config'])
     # apply patch;
+
+    logging.warning('Patch')
+    # clone repo;
     if 'patch' in argument and argument['patch'] != '':
         if not (await apply_patch(argument['patch'], clone_dir)):
             await jpctx.worker.report_job_log_async(
@@ -203,12 +215,14 @@ async def consume_kbuilder(
         '-os', 'linux',
         '-arch', argument['kernel-arch'],
         '-config', 'config',
-        '-vm', 'gce',
+        '-vm', 'qemu',
         '-kernel_src', clone_dir,
         '-compiler', argument.get('compiler', 'clang'),
         '-linker', argument.get('linker', 'ld.lld'),
         '-cmdline', argument.get('kernel-cmdline', ''),
+        '--no-image',
         '-userspace', userspace_img,
+
         cwd=work_dir, stdout=asp.PIPE, stderr=asp.PIPE, stdin=asp.DEVNULL)
     out, err = await proc.communicate()
     code = proc.returncode
@@ -277,21 +291,21 @@ async def consume_kbuilder(
         upload_list.append('kernel.config')
         key_list.append('kernel-config-url')
     # - gce image;
-    if argument['userspace-image-name'] != '' and os.path.exists(os.path.join(work_dir, 'image')):
-        # tar and gzip;
-        await run_async(
-            shutil.move,
-            os.path.join(work_dir, 'image'),
-            os.path.join(work_dir, 'disk.raw'))
-        code = await ((await asp.create_subprocess_exec(
-            'tar',
-            '-czf',
-            'image.tar.gz',
-            'disk.raw',
-            cwd=work_dir,
-            stdout=asp.DEVNULL,
-            stderr=asp.DEVNULL)).wait())
-        upload_list.append('image.tar.gz')
+    # if argument['userspace-image-name'] != '' and os.path.exists(os.path.join(work_dir, 'image')):
+    #     # tar and gzip;
+    #     await run_async(
+    #         shutil.move,
+    #         os.path.join(work_dir, 'image'),
+    #         os.path.join(work_dir, 'disk.raw'))
+    #     code = await ((await asp.create_subprocess_exec(
+    #         'tar',
+    #         '-czf',
+    #         'image.tar.gz',
+    #         'disk.raw',
+    #         cwd=work_dir,
+    #         stdout=asp.DEVNULL,
+    #         stderr=asp.DEVNULL)).wait())
+        # upload_list.append('image.tar.gz')
         key_list.append('vm-image-url')
     await jpctx.worker.report_job_log_async(job_ctx['job-id'], 'Start to upload files')
     results = await run_async(
